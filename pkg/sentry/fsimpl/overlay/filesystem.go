@@ -1749,14 +1749,24 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if name == "." || name == ".." {
 		return linuxerr.EISDIR
 	}
-	if rp.MustBeDir() {
-		return linuxerr.ENOTDIR
-	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
+
+	if rp.MustBeDir() {
+		// Like Linux, report ENOENT for a nonexistent file and EISDIR for a
+		// directory before rejecting the trailing slash.
+		child, _, err := fs.getChildLocked(ctx, parent, name, &ds)
+		if err != nil {
+			return err
+		}
+		if child.isDir() {
+			return linuxerr.EISDIR
+		}
+		return linuxerr.ENOTDIR
+	}
 
 	// Ensure that parent is copied-up before potentially holding child.copyMu
 	// below.

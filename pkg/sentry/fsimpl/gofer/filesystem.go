@@ -691,6 +691,17 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		if rp.MustBeDir() {
 			if child != nil {
 				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
+				return linuxerr.ENOTDIR
+			}
+			// Like Linux, report ENOENT for a nonexistent file and EISDIR
+			// for a directory before rejecting the trailing slash. child
+			// may be nil only because it isn't cached, so look it up.
+			child, err := fs.getChildAndWalkPathLocked(ctx, parent, resolvingPathFull(rp), &ds)
+			if err != nil {
+				return err
+			}
+			if child.isDir() {
+				return linuxerr.EISDIR
 			}
 			return linuxerr.ENOTDIR
 		}
